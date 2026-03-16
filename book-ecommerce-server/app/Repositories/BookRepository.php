@@ -1,0 +1,254 @@
+<?php
+
+namespace App\Repositories;
+
+use App\Config\DatabaseConnection;
+use App\Models\BookModel;
+use PDO;
+use PDOException;
+use RuntimeException;
+
+class BookRepository
+{
+    private PDO $conn;
+
+    public function __construct()
+    {
+        $this->conn = DatabaseConnection::getInstance();
+    }
+
+    /**
+     * CREATE BOOK
+     */
+    public function saveBook(BookModel $book): bool
+    {
+        try {
+            $sql = "
+                CALL createBook(
+                    :title,
+                    :author_id,
+                    :category_id,
+                    :price,
+                    :stock,
+                    :description,
+                    :published_date,
+                    :book_img
+                )
+            ";
+
+            $ps = $this->conn->prepare($sql);
+
+            $ps->bindValue(':title', $book->getTitle(), PDO::PARAM_STR);
+            $ps->bindValue(':author_id', $book->getAuthorId(), PDO::PARAM_INT);
+            $ps->bindValue(':category_id', $book->getCategoryId(), PDO::PARAM_INT);
+            $ps->bindValue(':price', $book->getPrice());
+            $ps->bindValue(':stock', $book->getStock(), PDO::PARAM_INT);
+            $ps->bindValue(':description', $book->getDescription(), PDO::PARAM_STR);
+            $ps->bindValue(':published_date', $book->getPublishedDate());
+            $ps->bindValue(':book_img', $book->getBookImage(), PDO::PARAM_STR);
+
+            return $ps->execute();
+        } catch (PDOException $e) {
+            throw new RuntimeException('Failed to save book: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * GET ALL BOOKS
+     */
+    public function getAll(): array
+    {
+        try {
+            $sql = "
+                SELECT
+                    books.id,
+                    books.title,
+                    books.description,
+                    books.price,
+                    books.stock,
+                    books.created_at,
+                    books.published_date,
+                    books.book_img,
+                    authors.name AS author_name,
+                    categories.name AS category_name
+                FROM books
+                INNER JOIN authors ON books.author_id = authors.id
+                INNER JOIN categories ON books.category_id = categories.id
+                ORDER BY books.id DESC
+            ";
+
+            $stmt = $this->conn->query($sql);
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            throw new RuntimeException('Failed to fetch books: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * GET BOOK BY ID
+     */
+    public function getById(int $id): ?array
+    {
+        try {
+            $sql = "SELECT * FROM books WHERE id = :id";
+            $stmt = $this->conn->prepare($sql);
+            $stmt->bindValue(':id', $id, PDO::PARAM_INT);
+            $stmt->execute();
+
+            $book = $stmt->fetch(PDO::FETCH_ASSOC);
+            return $book ?: null;
+        } catch (PDOException $e) {
+            throw new RuntimeException('Failed to fetch book: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * UPDATE BOOK
+     */
+    public function updateBook(int $id, BookModel $book): bool
+    {
+        try {
+            $sql = "
+                UPDATE books SET
+                    title = :title,
+                    author_id = :author_id,
+                    category_id = :category_id,
+                    price = :price,
+                    stock = :stock,
+                    description = :description,
+                    published_date = :published_date,
+                    book_img = :book_img
+                WHERE id = :id
+            ";
+
+            $ps = $this->conn->prepare($sql);
+
+            $ps->bindValue(':id', $id, PDO::PARAM_INT);
+            $ps->bindValue(':title', $book->getTitle());
+            $ps->bindValue(':author_id', $book->getAuthorId(), PDO::PARAM_INT);
+            $ps->bindValue(':category_id', $book->getCategoryId(), PDO::PARAM_INT);
+            $ps->bindValue(':price', $book->getPrice());
+            $ps->bindValue(':stock', $book->getStock(), PDO::PARAM_INT);
+            $ps->bindValue(':description', $book->getDescription());
+            $ps->bindValue(':published_date', $book->getPublishedDate());
+            $ps->bindValue(':book_img', $book->getBookImage());
+
+            return $ps->execute();
+        } catch (PDOException $e) {
+            throw new RuntimeException('Failed to update book: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * DELETE BOOK
+     */
+    public function deleteBook(int $id): bool
+    {
+        try {
+            $sql = "DELETE FROM books WHERE id = :id";
+            $stmt = $this->conn->prepare($sql);
+            $stmt->bindValue(':id', $id, PDO::PARAM_INT);
+            return $stmt->execute();
+        } catch (PDOException $e) {
+            throw new RuntimeException('Failed to delete book: ' . $e->getMessage());
+        }
+    }
+
+
+    //  Get All Price from Books
+    public function getAllPrice()
+    {
+        try {
+            $sql = "SELECT DISTINCT price FROM books ORDER BY price DESC";
+            $stmt = $this->conn->query($sql);
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            throw new RuntimeException('Failed to fetch books: ' . $e->getMessage());
+        }
+    }
+
+    // Count Total Books
+    public function countBooks(): int
+    {
+        try {
+            $sql = "SELECT COUNT(*) AS total FROM books";
+            $stmt = $this->conn->query($sql);
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            return (int)$result['total'];
+        } catch (PDOException $e) {
+            throw new RuntimeException('Failed to count books: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * GET NEW ARRIVAL BOOKS
+     * Orders by created_at (newest first), limited to 10.
+     * If created_at does not exist, try to add it and fallback to id ordering.
+     */
+    public function getNewArrivals(int $limit = 10): array
+    {
+        try {
+            $sql = "
+                SELECT
+                    books.id,
+                    books.title,
+                    books.description,
+                    books.price,
+                    books.stock,
+                    books.created_at,
+                    books.published_date,
+                    books.book_img,
+                    authors.name AS author_name,
+                    categories.name AS category_name
+                FROM books
+                INNER JOIN authors ON books.author_id = authors.id
+                INNER JOIN categories ON books.category_id = categories.id
+                ORDER BY books.created_at DESC, books.id DESC
+                LIMIT :limit
+            ";
+
+            $stmt = $this->conn->prepare($sql);
+            $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+            $stmt->execute();
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            throw new RuntimeException('Failed to fetch new arrivals: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * GET BEST SELLERS / POPULAR BOOKS
+     * Uses sales_count/sold_count/total_sold if present, otherwise fallback by stock ASC.
+     */
+    public function getBestSellers(int $limit = 10): array
+    {
+        try {
+            $sql = "
+                SELECT
+                    books.id,
+                    books.title,
+                    books.description,
+                    books.price,
+                    books.stock,
+                    books.created_at,
+                    books.published_date,
+                    books.book_img,
+                    authors.name AS author_name,
+                    categories.name AS category_name
+                FROM books
+                INNER JOIN authors ON books.author_id = authors.id
+                INNER JOIN categories ON books.category_id = categories.id
+                ORDER BY books.sales_count DESC, books.id DESC
+                LIMIT :limit
+            ";
+
+            $stmt = $this->conn->prepare($sql);
+            $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+            $stmt->execute();
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            throw new RuntimeException('Failed to fetch best sellers: ' . $e->getMessage());
+        }
+    }
+
+}
