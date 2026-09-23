@@ -2,6 +2,7 @@
 
 namespace App\Routes;
 
+
 class Router
 {
     private array $routes = [];
@@ -30,6 +31,7 @@ class Router
         $method = $_SERVER['REQUEST_METHOD'];
         $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
         $uri = str_replace('/public', '', $uri);
+        $uri = rtrim($uri, '/') ?: '/';
 
         if (isset($this->routes[$method][$uri])) {
             call_user_func($this->routes[$method][$uri]);
@@ -39,7 +41,8 @@ class Router
         // Check for dynamic routes like /books/{id}
         foreach ($this->routes[$method] ?? [] as $route => $handler) {
             // Convert /books/{id} -> regex /books/(\d+)
-            $pattern = preg_replace('#\{[\w]+\}#', '([\w-]+)', $route);
+            $pattern = rtrim($route, '/') ?: '/';
+            $pattern = preg_replace('#\{[\w]+\}#', '([\w-]+)', $pattern);
             $pattern = "#^" . $pattern . "$#";
 
             if (preg_match($pattern, $uri, $matches)) {

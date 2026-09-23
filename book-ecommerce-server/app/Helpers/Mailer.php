@@ -10,11 +10,21 @@ class Mailer
 {
     public static function isSmtpConfigured(): bool
     {
-        return !empty($_ENV['MAIL_HOST'])
-            && !empty($_ENV['MAIL_PORT'])
-            && !empty($_ENV['MAIL_USERNAME'])
-            && !empty($_ENV['MAIL_PASSWORD'])
-            && !empty($_ENV['MAIL_FROM_ADDRESS']);
+        $required = [
+            (string)($_ENV['MAIL_HOST'] ?? ''),
+            (string)($_ENV['MAIL_PORT'] ?? ''),
+            (string)($_ENV['MAIL_USERNAME'] ?? ''),
+            (string)($_ENV['MAIL_PASSWORD'] ?? ''),
+            (string)($_ENV['MAIL_FROM_ADDRESS'] ?? ''),
+        ];
+
+        foreach ($required as $value) {
+            if ($value === '' || str_contains($value, 'your_')) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public static function sendResetOtp(string $toEmail, string $otpCode, int $expiryMinutes): void

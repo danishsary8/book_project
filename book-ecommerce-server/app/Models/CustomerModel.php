@@ -1,6 +1,5 @@
 <?php
 // app/Models/Customer.php
-
 namespace App\Models;
 
 class CustomerModel

@@ -100,6 +100,15 @@ class CustomerRepository{
                 return false;
             }
 
+            $this->db->prepare("
+                UPDATE password_reset_tokens
+                SET used_at = NOW()
+                WHERE customer_id = :customer_id
+                  AND used_at IS NULL
+            ")->execute([
+                'customer_id' => $customer['id'],
+            ]);
+
             $sql = "INSERT INTO password_reset_tokens (customer_id, token, expires_at)
                     VALUES (:customer_id, :token, :expires_at)";
             $stmt = $this->db->prepare($sql);
@@ -112,13 +121,6 @@ class CustomerRepository{
             throw new RuntimeException('Failed to save reset token: ' . $e->getMessage());
         }
     } 
-
-    //  Logout
-    public function logout(int $id): bool
-    {
-        return true;
-    }
-
 
     /** Find customer by reset token */
     public function findByResetToken(string $token): ?array

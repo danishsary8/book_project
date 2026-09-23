@@ -2,6 +2,10 @@
 
 namespace App\Controllers;
 
+use App\Helpers\ApiResponse;
+use App\Helpers\Auth;
+use App\Helpers\Request;
+use App\Helpers\Validator;
 use App\Models\BookModel;
 use App\Repositories\BookRepository;
 use RuntimeException;
@@ -15,225 +19,149 @@ class BookController
         $this->repo = new BookRepository();
     }
 
-    /**
-     * CREATE BOOK (POST)
-     */
+    private function hydrateBookModel(array $data): BookModel
+    {
+        Validator::requireFields($data, [
+            'title',
+            'author_id',
+            'category_id',
+            'price',
+            'stock',
+        ]);
+
+        return new BookModel(
+            Validator::string($data, 'title', 255),
+            Validator::int($data, 'author_id', 1),
+            Validator::int($data, 'category_id', 1),
+            Validator::float($data, 'price', 0),
+            Validator::int($data, 'stock', 0),
+            Validator::nullableString($data, 'description', 10000) ?? '',
+            Validator::nullableString($data, 'published_date', 20) ?? '',
+            Validator::nullableString($data, 'book_img', 2000) ?? ''
+        );
+    }
+
     public function save(): void
     {
         try {
-            $data = json_decode(file_get_contents('php://input'), true);
+            Auth::requireRole(['admin']);
+            $book = $this->hydrateBookModel(Request::jsonBody());
+            $created = $this->repo->saveBook($book);
 
-            $book = new BookModel(
-                $data['title'],
-                $data['author_id'],
-                $data['category_id'],
-                $data['price'],
-                $data['stock'],
-                $data['description'],
-                $data['published_date'],
-                $data['book_img'] ?? null
-            );
-
-            $this->repo->saveBook($book);
-
-            http_response_code(201); // Created
-            echo json_encode([
-                'status' => 'success',
-                'message' => 'Book created successfully'
-            ]);
-
+            ApiResponse::success([
+                'message' => 'Book created successfully',
+                'data' => $created,
+            ], 201);
         } catch (RuntimeException $e) {
-            http_response_code(500);
-            echo json_encode([
-                'status' => 'error',
-                'message' => $e->getMessage()
-            ]);
+            ApiResponse::error($e->getMessage(), 400);
         }
     }
 
-    /**
-     * GET ALL BOOKS (GET)
-     */
     public function index(): void
     {
         try {
-            $books = $this->repo->getAll();
-            http_response_code(200);
-            echo json_encode([
-                'status' => 'success',
-                'data' => $books
+            $result = $this->repo->searchCatalog([
+                'search' => Request::query('search'),
+                'category_id' => Request::query('category_id'),
+                'author_id' => Request::query('author_id'),
+                'min_price' => Request::query('min_price'),
+                'max_price' => Request::query('max_price'),
+                'sort' => Request::query('sort', 'newest'),
+                'page' => Request::query('page', 1),
+                'limit' => Request::query('limit', 100),
+            ]);
+
+            ApiResponse::success([
+                'data' => $result['items'],
+                'meta' => $result['meta'],
             ]);
         } catch (RuntimeException $e) {
-            http_response_code(500);
-            echo json_encode([
-                'status' => 'error',
-                'message' => $e->getMessage()
-            ]);
+            ApiResponse::error($e->getMessage(), 500);
         }
     }
 
-    /**
-     * GET BOOK BY ID (GET /?id=1)
-     */
     public function show(int $id): void
     {
         try {
             $book = $this->repo->getById($id);
 
             if (!$book) {
-                http_response_code(404);
-                echo json_encode([
-                    'status' => 'error',
-                    'message' => 'Book not found'
-                ]);
+                ApiResponse::error('Book not found', 404);
                 return;
             }
 
-            http_response_code(200);
-            echo json_encode([
-                'status' => 'success',
-                'data' => $book
-            ]);
-
+            ApiResponse::success(['data' => $book]);
         } catch (RuntimeException $e) {
-            http_response_code(500);
-            echo json_encode([
-                'status' => 'error',
-                'message' => $e->getMessage()
-            ]);
+            ApiResponse::error($e->getMessage(), 500);
         }
     }
 
-    /**
-     * UPDATE BOOK (PUT)
-     */
     public function update(int $id): void
     {
         try {
-            $data = json_decode(file_get_contents('php://input'), true);
+            Auth::requireRole(['admin']);
+            $book = $this->hydrateBookModel(Request::jsonBody());
+            $updated = $this->repo->updateBook($id, $book);
 
-            $book = new BookModel(
-                $data['title'],
-                $data['author_id'],
-                $data['category_id'],
-                $data['price'],
-                $data['stock'],
-                $data['description'],
-                $data['published_date'],
-                $data['book_img'] ?? null
-            );
-            $this->repo->updateBook($id, $book);
-            http_response_code(200);
-            echo json_encode([
-                'status' => 'success',
-                'message' => 'Book updated successfully'
+            ApiResponse::success([
+                'message' => 'Book updated successfully',
+                'data' => $updated,
             ]);
-
         } catch (RuntimeException $e) {
-            http_response_code(500);
-            echo json_encode([
-                'status' => 'error',
-                'message' => $e->getMessage()
-            ]);
+            $status = $e->getMessage() === 'Book not found' ? 404 : 400;
+            ApiResponse::error($e->getMessage(), $status);
         }
     }
 
-    /**
-     * DELETE BOOK (DELETE)
-     */
     public function delete(int $id): void
     {
         try {
+            Auth::requireRole(['admin']);
             $this->repo->deleteBook($id);
-
-            http_response_code(200);
-            echo json_encode([
-                'status' => 'success',
-                'message' => 'Book deleted successfully'
-            ]);
-
+            ApiResponse::success(['message' => 'Book deleted successfully']);
         } catch (RuntimeException $e) {
-            http_response_code(500);
-            echo json_encode([
-                'status' => 'error',
-                'message' => $e->getMessage()
-            ]);
+            $status = $e->getMessage() === 'Book not found' ? 404 : 400;
+            ApiResponse::error($e->getMessage(), $status);
         }
     }
 
-    //  GEt all Book Price 
-    public function getBookPrice(){
-        try{
-          $data = $this->repo->getAllPrice();
-            http_response_code(200);
-            echo json_encode([
-                'status' => 'success',
-                'data' => $data
-            ]);
-
-        }catch(RuntimeException $e){
-             http_response_code(500);
-            echo json_encode([
-                'status' => 'error',
-                'message' => $e->getMessage()
-            ]);
+    public function getBookPrice(): void
+    {
+        try {
+            $data = $this->repo->getAllPrice();
+            ApiResponse::success(['data' => $data]);
+        } catch (RuntimeException $e) {
+            ApiResponse::error($e->getMessage(), 500);
         }
     }
 
-    // Count Total of Books
-    public function countBooks(){
-        try{
+    public function countBooks(): void
+    {
+        try {
             $count = $this->repo->countBooks();
-            http_response_code(200);
-            echo json_encode([
-                'status' => 'success',
-                'total_books' => $count
-            ]);
-        }catch(RuntimeException $e){
-             http_response_code(500);
-            echo json_encode([
-                'status' => 'error',
-                'message' => $e->getMessage()
-            ]);
+            ApiResponse::success(['total_books' => $count]);
+        } catch (RuntimeException $e) {
+            ApiResponse::error($e->getMessage(), 500);
         }
     }
 
-    // GET NEW ARRIVAL BOOKS
     public function newArrivals(): void
     {
         try {
             $books = $this->repo->getNewArrivals(10);
-            http_response_code(200);
-            echo json_encode([
-                'status' => 'success',
-                'data' => $books
-            ]);
+            ApiResponse::success(['data' => $books]);
         } catch (RuntimeException $e) {
-            http_response_code(500);
-            echo json_encode([
-                'status' => 'error',
-                'message' => $e->getMessage()
-            ]);
+            ApiResponse::error($e->getMessage(), 500);
         }
     }
 
-    // GET BEST SELLERS / POPULAR BOOKS
     public function bestSellers(): void
     {
         try {
             $books = $this->repo->getBestSellers(10);
-            http_response_code(200);
-            echo json_encode([
-                'status' => 'success',
-                'data' => $books
-            ]);
+            ApiResponse::success(['data' => $books]);
         } catch (RuntimeException $e) {
-            http_response_code(500);
-            echo json_encode([
-                'status' => 'error',
-                'message' => $e->getMessage()
-            ]);
+            ApiResponse::error($e->getMessage(), 500);
         }
     }
-    
 }
