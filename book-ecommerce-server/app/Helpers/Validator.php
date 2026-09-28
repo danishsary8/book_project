@@ -67,6 +67,25 @@ final class Validator
         return $value;
     }
 
+    /**
+     * Validate an optional image URL while retaining support for existing
+     * relative legacy filenames. Cloudinary URLs are stored exactly as pasted.
+     */
+    public static function imageUrl(array $data, string $field = 'book_img', int $maxLength = 2000): ?string
+    {
+        $value = self::nullableString($data, $field, $maxLength);
+        if ($value === null) {
+            return null;
+        }
+
+        if (preg_match('/^https?:\/\//i', $value) === 1 && filter_var($value, FILTER_VALIDATE_URL) === false) {
+            ApiResponse::error("{$field} must be a valid HTTP or HTTPS URL", 422);
+            exit;
+        }
+
+        return $value;
+    }
+
     public static function email(array $data, string $field = 'email'): string
     {
         $email = self::string($data, $field, 180);

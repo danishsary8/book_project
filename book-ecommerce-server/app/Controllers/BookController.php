@@ -37,7 +37,7 @@ class BookController
             Validator::int($data, 'stock', 0),
             Validator::nullableString($data, 'description', 10000) ?? '',
             Validator::nullableString($data, 'published_date', 20) ?? '',
-            Validator::nullableString($data, 'book_img', 2000) ?? ''
+            Validator::imageUrl($data, 'book_img', 2000) ?? ''
         );
     }
 
