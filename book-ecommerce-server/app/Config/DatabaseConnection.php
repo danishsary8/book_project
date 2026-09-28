@@ -53,7 +53,7 @@ final class DatabaseConnection
             return self::$instance;
 
         } catch (PDOException $e) {
-            throw new RuntimeException('Database connection failed: ' . $e->getMessage());
+            throw new RuntimeException('Database connection failed: ' . $e->getMessage(), 0, $e);
         }
     }
 }

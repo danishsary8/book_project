@@ -99,11 +99,15 @@ Click **Deploy project**. Once Wasmer supplies the app URL, test in this order:
 
 ```powershell
 Invoke-RestMethod 'https://YOUR-APP.wasmer.app/health'
+Invoke-RestMethod 'https://YOUR-APP.wasmer.app/health/db'
 Invoke-RestMethod 'https://YOUR-APP.wasmer.app/books'
 ```
 
-`/health` confirms PHP starts but does **not** touch PostgreSQL. `/books`
-checks the database and schema. A 500 response on `/health` may mean
+`/health` confirms PHP starts but does **not** touch PostgreSQL. `/health/db`
+connects to PostgreSQL and returns 503 with a `reason` (missing `pdo_pgsql`,
+missing `DB_*` variables, wrong password, unreachable host, SSL problem, or
+`missing_tables` when migrations were not applied) without printing hosts or
+credentials. `/books` checks real queries. A 500 response on `/health` may mean
 `JWT_SECRET` is missing. If `/books` fails, check Wasmer logs, the Neon
 host/credentials, TLS settings, tables, and whether the deployed PHP build has
 the `pdo_pgsql` driver. Local XAMPP having that driver does not prove Wasmer

@@ -2,6 +2,7 @@
 
 require_once __DIR__ . '/../vendor/autoload.php';
 
+use App\Config\DatabaseConnection;
 use App\Controllers\AdminController;
 use App\Controllers\AuthorsController;
 use App\Controllers\AuthController;
@@ -85,6 +86,80 @@ $router->get('/health', static function (): void {
             'timestamp' => gmdate('c'),
         ],
     ]);
+});
+
+// Reports why the database is unusable without echoing hosts or credentials:
+// missing driver, missing DB_* names, a hint for a failed connect, or missing
+// tables. The full error goes to the host log.
+$router->get('/health/db', static function (): void {
+    $fail = static function (string $reason, array $extra = []): void {
+        ApiResponse::error('Database check failed', 503, ['reason' => $reason, ...$extra]);
+    };
+
+    if (!extension_loaded('pdo_pgsql')) {
+        $fail('pdo_pgsql extension is not loaded in this PHP runtime', [
+            'pdo_drivers' => class_exists(PDO::class) ? PDO::getAvailableDrivers() : [],
+        ]);
+        return;
+    }
+
+    $missing = array_values(array_filter(
+        ['DB_DRIVER', 'DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASS'],
+        static fn (string $key): bool => trim((string)($_ENV[$key] ?? '')) === ''
+    ));
+    if ($missing !== []) {
+        $fail('Missing environment variables', ['missing' => $missing]);
+        return;
+    }
+
+    try {
+        $db = DatabaseConnection::getInstance();
+    } catch (Throwable $e) {
+        error_log('[Bookly] /health/db connect failed: ' . $e->getMessage());
+        $previous = $e->getPrevious();
+        // pdo_pgsql reports nearly every connect failure as SQLSTATE 08006, so
+        // classify by libpq's message and return only the fixed hint text.
+        $hints = [
+            'endpoint' => 'Neon rejected the endpoint (use the host from Neon Connection Details)',
+            'password authentication failed' => 'Wrong DB_USER or DB_PASS',
+            'does not exist' => 'DB_NAME or DB_USER does not exist on this server',
+            'could not translate host name' => 'DB_HOST cannot be resolved (check the hostname)',
+            'Connection refused' => 'Nothing is listening on DB_HOST:DB_PORT',
+            'timeout expired' => 'Timed out reaching DB_HOST:DB_PORT (outbound network or firewall)',
+            'SSL' => 'SSL negotiation failed (check DB_SSLMODE)',
+            'channel binding' => 'Channel binding failed (check DB_CHANNEL_BINDING)',
+        ];
+        $reason = 'Could not connect to the database (see host logs)';
+        if (!$previous instanceof PDOException) {
+            // The only non-PDO failure is the TLS settings check.
+            $reason = $e->getMessage();
+        } else {
+            foreach ($hints as $needle => $hint) {
+                if (stripos($previous->getMessage(), $needle) !== false) {
+                    $reason = $hint;
+                    break;
+                }
+            }
+        }
+        $sqlState = $previous instanceof PDOException ? (string)($previous->errorInfo[0] ?? $previous->getCode()) : '';
+        $fail($reason, ['sqlstate' => $sqlState]);
+        return;
+    }
+
+    $required = ['books', 'categories', 'authors', 'customers', 'auth_rate_limits', 'refresh_tokens', 'carts', 'invoices', 'store_settings'];
+    $missingTables = [];
+    foreach ($required as $table) {
+        $exists = $db->query("SELECT to_regclass('public.{$table}') IS NOT NULL")->fetchColumn();
+        if (!$exists) {
+            $missingTables[] = $table;
+        }
+    }
+    if ($missingTables !== []) {
+        $fail('Connected, but schema migrations have not been applied', ['missing_tables' => $missingTables]);
+        return;
+    }
+
+    ApiResponse::success(['data' => ['database' => 'ok']]);
 });
 
 $router->get('/auth/me', $lazy(AuthController::class, 'me'));

@@ -11,6 +11,16 @@ final class ErrorHandler
         ini_set('display_errors', '0');
 
         set_exception_handler(static function (Throwable $exception): void {
+            // Production responses hide the message, so the host log (stderr
+            // under `php -S`) is the only place the real cause shows up.
+            error_log(sprintf(
+                '[Bookly] Uncaught %s: %s in %s:%d',
+                get_class($exception),
+                $exception->getMessage(),
+                $exception->getFile(),
+                $exception->getLine()
+            ));
+
             ApiResponse::error(
                 self::isProduction() ? 'Internal server error' : $exception->getMessage(),
                 500
